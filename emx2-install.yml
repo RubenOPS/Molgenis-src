@@ -1,0 +1,27 @@
+---
+- name: Deploy MOLGENIS EMX2 on SURF Research Cloud
+  hosts: all            # controleer: SRC kan localhost verwachten
+  gather_facts: true
+  become: true
+  vars:
+    enable_catalogue: true
+    domain_name: "{{ ansible_facts['fqdn'] }}"
+    shared_dir: /srv/molgenis-work
+    emx2:
+      adminPassword: "{{ emx2_admin_password }}"   # geheime SRC-parameter
+      setup: true
+      version: 13.141.1
+      ssh: false
+      memory:
+        xms: 256m
+        xmx: 1024m
+
+  pre_tasks:
+    - name: Fail if admin password is missing
+      ansible.builtin.assert:
+        that:
+          - emx2_admin_password is defined
+          - emx2_admin_password | length > 0
+
+  roles:
+    - emx2_ubuntu

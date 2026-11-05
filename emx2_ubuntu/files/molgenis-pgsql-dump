@@ -1,0 +1,31 @@
+#!/bin/bash -ue
+####
+#
+# Molgenis EMX2 local PGSQL backup. 
+#       - pgsql backups on local server for local backup en restore usage
+#       
+# Restore can be done by: 
+# su - postgres -c "zstdcat /var/pgsql-backup/postgresql-<<date>>.sql.zst | /usr/bin/psql"
+#
+#
+# Copyright ©  Molgenis Dick Postma  
+# All rights reserved
+###
+USER="molgenis"
+
+# Keep only 1 backup
+KEEP_BACKUPS=1
+
+BACKUP_DIR="/var/molgenis-backup/postgresql"
+CURRENT_DATE=$(date "+%d%m%Y")
+
+if [ ! -d $BACKUP_DIR ]; then
+        mkdir -p $BACKUP_DIR/TMP
+        chgrp $USER $BACKUP_DIR
+fi
+
+# Create new backup
+sudo -u postgres pg_dumpall | zstd >> ${BACKUP_DIR}/postgresql-"${CURRENT_DATE}".sql.zst
+
+# Cleanup old backups, keep only the latest $KEEP_BACKUPS
+ls -1t $BACKUP_DIR/*.sql.zst | tail -n +$((KEEP_BACKUPS+1)) | xargs -r rm --

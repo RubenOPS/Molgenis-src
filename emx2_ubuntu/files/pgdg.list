@@ -1,0 +1,1 @@
+deb [signed-by=/etc/apt/trusted.gpg.d/postgres.asc] http://apt.postgresql.org/pub/repos/apt jammy-pgdg main

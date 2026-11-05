@@ -1,0 +1,18 @@
+[Unit]
+Description=MOLGENIS EMX2 data platform
+After=syslog.target
+
+[Service]
+User=molgenis
+Environment=MOLGENIS_ADMIN_PW={{ emx2.adminPassword }}
+WorkingDirectory=/usr/local/share/molgenis
+ExecStart=/bin/java -DMOLGENIS_HTTP_PORT=8080 -jar -Xmx{{ emx2.memory.xmx }} -Xms{{ emx2.memory.xms }} /usr/local/share/molgenis/molgenis.jar
+StandardOutput=append:/var/log/molgenis/emx2.log
+StandardError=append:/var/log/molgenis/error.log
+UMask=0022
+Type=simple
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

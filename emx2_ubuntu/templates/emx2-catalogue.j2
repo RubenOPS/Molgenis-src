@@ -1,0 +1,69 @@
+# emx2 service 
+location ~ /[^/]+/(aggregates|central|cranio-provider|cranio-public|directory|ern-genturis|ern-ithaca|ern-reconnect|ern-skin|gportal|graphql-playground|helloworld|imdhub-public|molgenis-components|molgenis-viz|nestor-public|pages|projectmanager|reports|schema|settings|tables|tailwind-components|tasks|ui|updownload|docs|graphql|api|index|sitemap\.xml|theme\.css|_login|_callback)(?:/.*)?/?$ {
+    proxy_pass http://localhost:8080;
+    client_max_body_size 0;
+    proxy_read_timeout 600s;
+    proxy_set_header Host $host;
+    proxy_http_version 1.1;
+}
+
+location ~ /_login {
+    proxy_pass http://localhost:8080;
+    client_max_body_size 0;
+    proxy_read_timeout 600s;
+    proxy_set_header Host $host;
+    proxy_http_version 1.1;
+}
+
+location ~ /_callback {
+    proxy_pass http://localhost:8080;
+    client_max_body_size 0;
+    proxy_read_timeout 600s;
+    proxy_set_header Host $host;
+    proxy_http_version 1.1;
+}
+
+location /apps/central {
+    proxy_pass http://localhost:8080;
+    client_max_body_size 0;
+    proxy_read_timeout 600s;
+    proxy_redirect http://localhost:8080/ $scheme://$host/;
+    proxy_set_header Host $host;
+    proxy_http_version 1.1;
+}
+
+location /apps/docs {
+    proxy_pass http://localhost:8080;
+    client_max_body_size 0;
+    proxy_read_timeout 600s;
+    proxy_redirect http://localhost:8080/ $scheme://$host/;
+    proxy_set_header Host $host;
+    proxy_http_version 1.1;
+}
+
+# google search verification
+location ~* /google.+\.html$ {
+  try_files $uri =404;
+}
+
+# static resources must be served
+location /apps {
+	proxy_pass http://localhost:8080;
+	proxy_http_version 1.1;
+}
+
+# all apis also otherwise downloads etc will break
+location /api {
+	proxy_pass http://localhost:8080;
+	proxy_http_version 1.1;
+}
+
+# catalogue app matches all other paths
+location / {
+    proxy_pass http://localhost:3000;
+    client_max_body_size 0;
+    proxy_read_timeout 600s;
+    proxy_redirect http://localhost:3000/ $scheme://$host/;
+    proxy_set_header Host $host;
+    proxy_http_version 1.1;
+}
