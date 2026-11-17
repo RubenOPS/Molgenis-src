@@ -7,30 +7,8 @@
     pkg:
       - openjdk-21-jre
       - python3-psycopg2
-      - nginx
-      - net-tools
-      - docker.io
-    update_cache: yes
+    update_cache: true
   when: ansible_facts['distribution'] == "Ubuntu"
-
-- name: 📦 Install base packages (RedHat)
-  ansible.builtin.dnf:
-    name:
-      - java-21-openjdk-headless
-      - python3-psycopg2
-      - nginx
-      - net-tools
-      - docker-ce
-      - docker-ce-cli
-    state: present
-  when: ansible_facts['os_family'] == "RedHat"
-
-- name: ✅ Enable and start Docker (RedHat)
-  ansible.builtin.systemd:
-    name: docker
-    enabled: yes
-    state: started
-  when: ansible_facts['os_family'] == "RedHat"
 
 # ===================================
 # PostgreSQL 15 repo + install
@@ -67,44 +45,12 @@
     pkg:
       - postgresql-15
       - postgresql-client-15
-    update_cache: yes
+    update_cache: true
   when: ansible_facts['distribution'] == "Ubuntu"
-
-- name: 🔑 Add postgres repo (RedHat)
-  ansible.builtin.dnf:
-    name: https://download.postgresql.org/pub/repos/yum/reporpms/EL-{{ ansible_facts['distribution_major_version'] }}-x86_64/pgdg-redhat-repo-latest.noarch.rpm
-    state: present
-    disable_gpg_check: yes
-  when: ansible_facts['os_family'] == "RedHat"
 
 - name: ⚙️ Disable built-in postgresql module (RedHat)
   ansible.builtin.command: dnf -qy module disable postgresql
   changed_when: false
-  when: ansible_facts['os_family'] == "RedHat"
-
-- name: 📦 Install postgresql-15 (RedHat)
-  ansible.builtin.dnf:
-    name:
-      - postgresql15-server
-      - postgresql15
-    state: present
-  when: ansible_facts['os_family'] == "RedHat"
-
-- name: 🔎 Check if postgresql-15 data directory is initialized (RedHat)
-  ansible.builtin.stat:
-    path: /var/lib/pgsql/15/data/PG_VERSION
-  register: pg_initialized
-  when: ansible_facts['os_family'] == "RedHat"
-
-- name: ⚙️ Initialize postgresql-15 database (RedHat)
-  ansible.builtin.command: /usr/pgsql-15/bin/postgresql-15-setup initdb
-  when: ansible_facts['os_family'] == "RedHat" and not pg_initialized.stat.exists
-
-- name: ✅ Enable and start postgresql-15 (RedHat)
-  ansible.builtin.systemd:
-    name: postgresql-15
-    enabled: yes
-    state: started
   when: ansible_facts['os_family'] == "RedHat"
 
 # ===================================
@@ -120,13 +66,6 @@
     regexp: "^#?max_locks_per_transaction\\s*="
     line: "max_locks_per_transaction = 256"
     state: present
-
-# ===================================
-# Timezone
-# ===================================
-- name: 🕐 Set timezone to Europe/Amsterdam
-  community.general.timezone:
-    name: Europe/Amsterdam
 
 # ===================================
 # Molgenis user, group and folder structure
@@ -183,18 +122,6 @@
     mode: '0644'
   when: existing_properties.stat.isreg is not defined
 
-- name: 🔎 Check if Docker is installed
-  ansible.builtin.command: which docker
-  register: docker_check
-  ignore_errors: yes
-
-- name: 🐳 Add molgenis user to docker group
-  ansible.builtin.user:
-    name: molgenis
-    groups: docker
-    append: yes
-  when: docker_check.rc == 0
-
 # ===================================
 # Operational scripts
 # ===================================
@@ -213,7 +140,7 @@
   ansible.builtin.copy:
     src: "{{ item }}"
     dest: "/usr/local/share/molgenis/tools/"
-    mode: 0700
+    mode: '0700'
     owner: root
     group: root
   loop:
@@ -259,13 +186,13 @@
     template: template0
   register: new_db
 
-- name: 🗄️ Create 'molgenis' schema
+- name: 🗄️ Create molgenis schema
   become: true
   become_user: postgres
   ansible.builtin.command: psql -c 'CREATE SCHEMA IF NOT EXISTS molgenis;'  # noqa no-handler
   when: new_db is changed
 
-- name: 🗄️ Grant rights to 'molgenis' user on schema
+- name: 🗄️ Grant rights to molgenis user on schema
   become: true
   become_user: postgres
   ansible.builtin.command: psql -c 'GRANT ALL PRIVILEGES ON SCHEMA molgenis TO molgenis;'  # noqa no-handler
@@ -296,17 +223,10 @@
     mode: '0644'
   notify: "restart nginx"
 
-- name: ⚙️ Install SSR run script
-  ansible.builtin.template:
-    src: run-ssr.sh.j2
-    dest: /home/molgenis/run-ssr.sh
-    mode: '0755'
-  when: enable_catalogue | default(false) | bool
-
 - name: ✅ Enable and start Nginx
   ansible.builtin.systemd:
     name: nginx
-    enabled: yes
+    enabled: true
     state: started
 
 # ===================================
@@ -344,20 +264,14 @@
     owner: root
     group: root
     state: link
-    force: yes
+    force: true
 
 - name: ✅ Enable emx2 service
   ansible.builtin.systemd:
     name: emx2.service
     enabled: true
-    daemon_reload: yes
+    daemon_reload: true
     state: started
-
-- name: ⏰ Add local EMX2 backup cronjob
-  ansible.builtin.copy:
-    src: molgenis-pgsql-dump
-    dest: /etc/cron.daily/
-    mode: 0755
 
 # ===================================
 # Python venv
@@ -367,7 +281,7 @@
     pkg:
       - "{{ 'python3.12' if ansible_facts['distribution_major_version'] == '24' else 'python3.10' }}"
       - "{{ 'python3.12-venv' if ansible_facts['distribution_major_version'] == '24' else 'python3.10-venv' }}"
-    update_cache: yes
+    update_cache: true
   when: ansible_facts['distribution'] == "Ubuntu"
 
 - name: 📦 Install Python venv (RedHat)
@@ -385,108 +299,12 @@
   ansible.builtin.copy:
     src: roles/emx2_ubuntu/files/99-restart-java-app
     dest: /etc/apt/apt.conf.d/
-    mode: 0755
+    mode: '0755'
   when: ansible_facts['distribution'] == "Ubuntu"
 
 - name: ⚙️ Add apt hook script
   ansible.builtin.copy:
     src: roles/emx2_ubuntu/files/restart-java-app.sh
     dest: /usr/local/bin/
-    mode: 0755
+    mode: '0755'
   when: ansible_facts['distribution'] == "Ubuntu"
-
-# ===================================
-# Prometheus exporters
-# ===================================
-- name: 🔎 Check for existing nginx exporter install
-  ansible.builtin.stat:
-    path: /usr/bin/prometheus-nginx-exporter
-  register: node_nginx_exporter_installed
-
-- name: 📦 Install nginx prometheus exporter (Ubuntu)
-  ansible.builtin.apt:
-    name: prometheus-nginx-exporter
-    state: present
-  when: ansible_facts['distribution'] == "Ubuntu" and not node_nginx_exporter_installed.stat.exists
-
-- name: 📦 Install nginx prometheus exporter (RedHat)
-  ansible.builtin.dnf:
-    name: prometheus-nginx-exporter
-    state: present
-  when: ansible_facts['os_family'] == "RedHat" and not node_nginx_exporter_installed.stat.exists
-
-- name: 🔎 Check for existing postgres exporter install
-  ansible.builtin.stat:
-    path: /usr/bin/prometheus-postgres-exporter
-  register: node_postgres_exporter_installed
-
-- name: 📦 Install pgsql prometheus exporter (Ubuntu)
-  ansible.builtin.apt:
-    name: prometheus-postgres-exporter
-    state: present
-  when: ansible_facts['distribution'] == "Ubuntu" and not node_postgres_exporter_installed.stat.exists
-
-- name: 📦 Install pgsql prometheus exporter (RedHat)
-  ansible.builtin.dnf:
-    name: prometheus-postgres-exporter
-    state: present
-  when: ansible_facts['os_family'] == "RedHat" and not node_postgres_exporter_installed.stat.exists
-
-- name: ⚙️ Enable nginx stub statistics
-  ansible.builtin.copy:
-    src: roles/preinstall/files/nginx-stub-stats.conf
-    dest: /etc/nginx/default.d/nginx-stub-stats.conf
-    owner: root
-    group: root
-    mode: '0644'
-  notify: "restart nginx"
-
-- name: ⚙️ Copy prometheus nginx exporter config
-  ansible.builtin.copy:
-    src: roles/preinstall/files/prometheus-nginx-exporter
-    dest: /etc/default/prometheus-nginx-exporter
-    owner: root
-    group: root
-    mode: '0640'
-
-- name: ⚙️ Copy prometheus pgsql exporter config
-  ansible.builtin.copy:
-    src: roles/preinstall/files/prometheus-postgres-exporter
-    dest: /etc/default/prometheus-postgres-exporter
-    owner: root
-    group: root
-    mode: '0640'
-
-- name: ✅ Enable and start prometheus pgsql exporter
-  ansible.builtin.systemd:
-    name: prometheus-postgres-exporter
-    enabled: yes
-    state: restarted
-
-- name: ✅ Enable and start prometheus nginx exporter
-  ansible.builtin.systemd:
-    name: prometheus-nginx-exporter
-    enabled: yes
-    state: restarted
-
-- name: 🔁 Restart PostgreSQL
-  ansible.builtin.service:
-    name: "{{ pg_service_name }}"
-    state: restarted
-
-# ===================================
-# SSR Catalogue container
-# ===================================
-- name: 🐳 Start SSR catalogue container
-  ansible.builtin.command: >
-    docker run -d
-    --name catalogue
-    --restart unless-stopped
-    --network host
-    -e NUXT_PUBLIC_API_BASE=https://{{ domain_name }}/
-    -e NUXT_PUBLIC_EMX2_THEME=molgenis
-    -e NUXT_PUBLIC_SCHEMA=catalogue
-    molgenis/ssr-catalogue:{{ emx2.version }}
-  when: enable_catalogue | default(false) | bool
-  register: catalogue_run
-  changed_when: "'Started' in catalogue_run.stdout or catalogue_run.rc == 0"
