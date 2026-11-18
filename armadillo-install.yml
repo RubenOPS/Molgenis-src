@@ -1,41 +1,61 @@
 ---
 # Install MOLGENIS Armadillo on an Ubuntu VM (SURF Research Cloud component).
-# Required extra vars: armadillo_domain, armadillo_admin_password,
-# armadillo_oidc_clientid, armadillo_oidc_clientsecret
+# Required SRC parameters (passed as extra vars):
+#   armadillo_domain            (source type Resource, value workspace_fqdn)
+#   armadillo_admin_password
+# Optional SRC parameters (only needed when armadillo_oidc_enabled is true):
+#   armadillo_oidc_enabled      (true/false, default false)
+#   armadillo_oidc_clientid
+#   armadillo_oidc_clientsecret
+# nginx, TLS and the server block are managed by the SRC-Nginx component,
+# which must run BEFORE this component.
 - name: Install MOLGENIS Armadillo
   hosts: all
   become: true
   vars:
-    armadillo_domain: example-armadillo.com
     armadillo_admin_user: admin
+    armadillo_oidc_enabled: false
     armadillo_oidc_url: https://auth1.molgenis.net/Armadillo
     armadillo_setup_url: https://raw.githubusercontent.com/molgenis/molgenis-service-armadillo/master/scripts/install/armadillo-setup.sh
     armadillo_setup_script: /opt/armadillo-setup.sh
     armadillo_done_marker: /var/lib/armadillo-install.done
 
   pre_tasks:
+    # Prints variable NAMES only (no values)
+    - name: Show which parameters SRC passed
+      ansible.builtin.debug:
+        msg: "{{ vars.keys() | select('search', '(?i)armadillo|oidc|domain') | list }}"
+
     - name: Check that required variables are set
       ansible.builtin.assert:
         that:
+          - armadillo_domain is defined
           - armadillo_domain | length > 0
           - armadillo_admin_password is defined
           - armadillo_admin_password | length > 0
+        fail_msg: "Missing required parameter(s) for the Armadillo install, check the component parameters in SRC"
+        quiet: true
+
+    - name: Check that the OIDC variables are set (only when OIDC is enabled)
+      ansible.builtin.assert:
+        that:
           - armadillo_oidc_clientid is defined
           - armadillo_oidc_clientid | length > 0
           - armadillo_oidc_clientsecret is defined
           - armadillo_oidc_clientsecret | length > 0
-        fail_msg: "Missing required variable(s) for the Armadillo install"
+        fail_msg: "OIDC is enabled but armadillo_oidc_clientid and/or armadillo_oidc_clientsecret are missing"
         quiet: true
+      when: armadillo_oidc_enabled | bool
 
-    - name: Check that nginx is present (installed by the SRC-nginx component)
+    - name: Check that nginx is present (installed by the SRC-Nginx component)
       ansible.builtin.stat:
-        path: /etc/nginx/sites-available
-      register: nginx_sites_dir
+        path: /etc/nginx
+      register: nginx_dir
 
     - name: Fail if nginx is missing
       ansible.builtin.assert:
-        that: nginx_sites_dir.stat.isdir | default(false)
-        fail_msg: "nginx not found; make sure the SRC-nginx component runs before this one"
+        that: nginx_dir.stat.isdir | default(false)
+        fail_msg: "nginx not found; make sure the SRC-Nginx component runs before this one"
         quiet: true
 
   tasks:
@@ -58,7 +78,10 @@
 
     - name: Run the Armadillo setup script
       ansible.builtin.command:
-        argv:
+        argv: "{{ armadillo_base_args + armadillo_oidc_args }}"
+        creates: "{{ armadillo_done_marker }}"
+      vars:
+        armadillo_base_args:
           - bash
           - "{{ armadillo_setup_script }}"
           - --admin-user
@@ -67,14 +90,12 @@
           - "{{ armadillo_admin_password }}"
           - --domain
           - "{{ armadillo_domain }}"
-          - --oidc
-          - --oidc_url
-          - "{{ armadillo_oidc_url }}"
-          - --oidc_clientid
-          - "{{ armadillo_oidc_clientid }}"
-          - --oidc_clientsecret
-          - "{{ armadillo_oidc_clientsecret }}"
-        creates: "{{ armadillo_done_marker }}"
+        armadillo_oidc_args: >-
+          {{ ['--oidc',
+              '--oidc_url', armadillo_oidc_url,
+              '--oidc_clientid', armadillo_oidc_clientid | default(''),
+              '--oidc_clientsecret', armadillo_oidc_clientsecret | default('')]
+             if armadillo_oidc_enabled | bool else [] }}
       no_log: true
       register: armadillo_setup
 
@@ -85,34 +106,45 @@
         mode: "0644"
       when: armadillo_setup is changed
 
-    - name: Configure nginx reverse proxy for Armadillo
+    # ===================================
+    # nginx: only a location snippet; the SRC-Nginx plugin owns the server block
+    # ===================================
+    - name: Create nginx app-location-conf.d folder
+      ansible.builtin.file:
+        path: /etc/nginx/app-location-conf.d
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Configure nginx reverse proxy location for Armadillo
       ansible.builtin.copy:
-        dest: /etc/nginx/sites-available/armadillo.conf
+        dest: /etc/nginx/app-location-conf.d/armadillo.conf
         owner: root
         group: root
         mode: "0644"
         content: |
-          server {
-            listen 80;
-            server_name {{ armadillo_domain }};
-            include /etc/nginx/conf.d/*.conf;
-            location / {
+          location / {
               proxy_pass http://localhost:8080;
               client_max_body_size 0;
               proxy_read_timeout 600s;
               proxy_redirect http://localhost:8080/ $scheme://$host/;
               proxy_set_header Host $host;
               proxy_http_version 1.1;
-            }
           }
       notify: Reload nginx
 
-    - name: Enable the Armadillo nginx site
-      ansible.builtin.file:
-        src: /etc/nginx/sites-available/armadillo.conf
-        dest: /etc/nginx/sites-enabled/armadillo.conf
-        state: link
-      notify: Reload nginx
+    # Warn if the plugin's server block does not load the snippet folder
+    - name: Check that the SRC-Nginx TLS config includes the snippet folder
+      ansible.builtin.command: grep -q "app-location-conf.d" /etc/nginx/conf.d/tls_main.conf
+      register: nginx_include_check
+      changed_when: false
+      failed_when: false
+
+    - name: Warn if the snippet folder is not included
+      ansible.builtin.debug:
+        msg: "WARNING: /etc/nginx/conf.d/tls_main.conf does not reference app-location-conf.d, the Armadillo proxy rules will not be active"
+      when: nginx_include_check.rc != 0
 
   handlers:
     - name: Reload nginx

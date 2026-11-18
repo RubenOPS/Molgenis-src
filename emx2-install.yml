@@ -4,7 +4,6 @@
   gather_facts: true
   become: true
   vars:
-    domain_name: "{{ emx2_fqdn | default(ansible_facts['fqdn']) }}"   # SRC Resource parameter (workspace_fqdn)
     shared_dir: /srv/molgenis-work
     emx2:
       adminPassword: "{{ emx2_admin_password | default('') }}"  # secret SRC parameter
@@ -28,9 +27,8 @@
           - emx2_admin_password | length > 0
           - emx2_version is defined
           - emx2_version | length > 0
-          - emx2_fqdn is defined
         fail_msg: >-
-          emx2_admin_password, emx2_version and/or emx2_fqdn were not passed in by SRC.
+          emx2_admin_password and/or emx2_version were not passed in by SRC.
           Check that the Emx2 component is attached to the catalog item
           and that the parameters appear there.
 
