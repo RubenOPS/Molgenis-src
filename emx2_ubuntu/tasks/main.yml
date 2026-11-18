@@ -7,8 +7,39 @@
     pkg:
       - openjdk-21-jre
       - python3-psycopg2
+      - nginx
     update_cache: true
   when: ansible_facts['distribution'] == "Ubuntu"
+
+# ===================================
+# Molgenis user, groups and folder structure
+# (created early because later tasks use them as owners)
+# ===================================
+- name: 👥 Create ops group
+  ansible.builtin.group:
+    name: ops
+    state: present
+
+- name: 👥 Create molgenis group
+  ansible.builtin.group:
+    name: molgenis
+    state: present
+
+- name: 👤 Create molgenis system user
+  ansible.builtin.user:
+    name: molgenis
+    group: molgenis
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+
+- name: 📁 Create shared work directory
+  ansible.builtin.file:
+    path: "{{ shared_dir }}"
+    state: directory
+    owner: root
+    group: ops
+    mode: '0750'
 
 # ===================================
 # PostgreSQL 15 repo + install
@@ -68,13 +99,14 @@
     state: present
 
 # ===================================
-# Molgenis user, group and folder structure
+# Sudoers + folder structure
 # ===================================
 - name: 🔒 Create sudoers file
   ansible.builtin.copy:
     src: molgenis
     dest: /etc/sudoers.d/molgenis
-    mode: '0640'
+    mode: '0440'
+    validate: /usr/sbin/visudo -cf %s
 
 - name: 📁 Create molgenis folder structure
   ansible.builtin.file:
@@ -107,6 +139,7 @@
     owner: molgenis
     group: molgenis
     state: link
+  notify: "Restart emx2"
 
 - name: 🔎 Check if molgenis-server.properties exists
   ansible.builtin.stat:
@@ -163,6 +196,12 @@
   ansible.builtin.set_fact:
     pg_service_name: "{{ 'postgresql' if ansible_facts['distribution'] == 'Ubuntu' else 'postgresql-15' }}"
 
+- name: ✅ Ensure PostgreSQL is running
+  ansible.builtin.systemd:
+    name: "{{ pg_service_name }}"
+    enabled: true
+    state: started
+
 - name: 👤 Create 'molgenis' PostgreSQL user
   become: true
   become_user: postgres
@@ -206,7 +245,7 @@
     src: nginx.conf
     dest: /etc/nginx/nginx.conf
     mode: '0644'
-  notify: "restart nginx"
+  notify: "Restart nginx"
 
 - name: 📁 Create nginx default.d folder
   ansible.builtin.file:
@@ -221,7 +260,7 @@
     src: "{{ 'emx2-catalogue.j2' if enable_catalogue | default(false) | bool else 'emx2.j2' }}"
     dest: /etc/nginx/default.d/emx2.conf
     mode: '0644'
-  notify: "restart nginx"
+  notify: "Restart nginx"
 
 - name: ✅ Enable and start Nginx
   ansible.builtin.systemd:
@@ -239,6 +278,7 @@
     group: root
     dest: /etc/systemd/system/emx2.service
     mode: '0644'
+  notify: "Restart emx2"
 
 - name: 📁 Create emx2.service.d folder
   ansible.builtin.file:
@@ -254,8 +294,10 @@
     owner: root
     group: root
     dest: /etc/systemd/system/emx2.service.d/override.conf
-    mode: '0644'
-  notify: "restart emx2"
+    # override.conf usually contains the admin password, so keep it root-only
+    mode: '0600'
+  no_log: true
+  notify: "Restart emx2"
 
 - name: 🔗 Create symbolic link to full_restore script
   ansible.builtin.file:
@@ -297,14 +339,14 @@
 # ===================================
 - name: ⚙️ Add apt hook
   ansible.builtin.copy:
-    src: roles/emx2_ubuntu/files/99-restart-java-app
+    src: 99-restart-java-app
     dest: /etc/apt/apt.conf.d/
-    mode: '0755'
+    mode: '0644'
   when: ansible_facts['distribution'] == "Ubuntu"
 
 - name: ⚙️ Add apt hook script
   ansible.builtin.copy:
-    src: roles/emx2_ubuntu/files/restart-java-app.sh
+    src: restart-java-app.sh
     dest: /usr/local/bin/
     mode: '0755'
   when: ansible_facts['distribution'] == "Ubuntu"
