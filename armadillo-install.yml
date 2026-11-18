@@ -1,0 +1,121 @@
+---
+# Install MOLGENIS Armadillo on an Ubuntu VM (SURF Research Cloud component).
+# Required extra vars: armadillo_domain, armadillo_admin_password,
+# armadillo_oidc_clientid, armadillo_oidc_clientsecret
+- name: Install MOLGENIS Armadillo
+  hosts: all
+  become: true
+  vars:
+    armadillo_domain: example-armadillo.com
+    armadillo_admin_user: admin
+    armadillo_oidc_url: https://auth1.molgenis.net/Armadillo
+    armadillo_setup_url: https://raw.githubusercontent.com/molgenis/molgenis-service-armadillo/master/scripts/install/armadillo-setup.sh
+    armadillo_setup_script: /opt/armadillo-setup.sh
+    armadillo_done_marker: /var/lib/armadillo-install.done
+
+  pre_tasks:
+    - name: Check that required variables are set
+      ansible.builtin.assert:
+        that:
+          - armadillo_domain | length > 0
+          - armadillo_admin_password is defined
+          - armadillo_admin_password | length > 0
+          - armadillo_oidc_clientid is defined
+          - armadillo_oidc_clientid | length > 0
+          - armadillo_oidc_clientsecret is defined
+          - armadillo_oidc_clientsecret | length > 0
+        fail_msg: "Missing required variable(s) for the Armadillo install"
+        quiet: true
+
+    - name: Check that nginx is present (installed by the SRC-nginx component)
+      ansible.builtin.stat:
+        path: /etc/nginx/sites-available
+      register: nginx_sites_dir
+
+    - name: Fail if nginx is missing
+      ansible.builtin.assert:
+        that: nginx_sites_dir.stat.isdir | default(false)
+        fail_msg: "nginx not found; make sure the SRC-nginx component runs before this one"
+        quiet: true
+
+  tasks:
+    - name: Install prerequisites
+      ansible.builtin.apt:
+        name:
+          - openjdk-21-jre-headless
+          - docker.io
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Download the Armadillo setup script
+      ansible.builtin.get_url:
+        url: "{{ armadillo_setup_url }}"
+        dest: "{{ armadillo_setup_script }}"
+        mode: "0700"
+        owner: root
+        group: root
+
+    - name: Run the Armadillo setup script
+      ansible.builtin.command:
+        argv:
+          - bash
+          - "{{ armadillo_setup_script }}"
+          - --admin-user
+          - "{{ armadillo_admin_user }}"
+          - --admin-password
+          - "{{ armadillo_admin_password }}"
+          - --domain
+          - "{{ armadillo_domain }}"
+          - --oidc
+          - --oidc_url
+          - "{{ armadillo_oidc_url }}"
+          - --oidc_clientid
+          - "{{ armadillo_oidc_clientid }}"
+          - --oidc_clientsecret
+          - "{{ armadillo_oidc_clientsecret }}"
+        creates: "{{ armadillo_done_marker }}"
+      no_log: true
+      register: armadillo_setup
+
+    - name: Write install marker
+      ansible.builtin.file:
+        path: "{{ armadillo_done_marker }}"
+        state: touch
+        mode: "0644"
+      when: armadillo_setup is changed
+
+    - name: Configure nginx reverse proxy for Armadillo
+      ansible.builtin.copy:
+        dest: /etc/nginx/sites-available/armadillo.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          server {
+            listen 80;
+            server_name {{ armadillo_domain }};
+            include /etc/nginx/conf.d/*.conf;
+            location / {
+              proxy_pass http://localhost:8080;
+              client_max_body_size 0;
+              proxy_read_timeout 600s;
+              proxy_redirect http://localhost:8080/ $scheme://$host/;
+              proxy_set_header Host $host;
+              proxy_http_version 1.1;
+            }
+          }
+      notify: Reload nginx
+
+    - name: Enable the Armadillo nginx site
+      ansible.builtin.file:
+        src: /etc/nginx/sites-available/armadillo.conf
+        dest: /etc/nginx/sites-enabled/armadillo.conf
+        state: link
+      notify: Reload nginx
+
+  handlers:
+    - name: Reload nginx
+      ansible.builtin.service:
+        name: nginx
+        state: reloaded
