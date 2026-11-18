@@ -4,7 +4,6 @@
   gather_facts: true
   become: true
   vars:
-    enable_catalogue: true
     domain_name: "{{ ansible_facts['fqdn'] }}"
     shared_dir: /srv/molgenis-work
     emx2:
@@ -17,6 +16,7 @@
         xmx: 1024m
 
   pre_tasks:
+    # Prints variable NAMES only (no values), so it is safe to leave in the log
     - name: Show which parameters SRC passed
       ansible.builtin.debug:
         msg: "{{ vars.keys() | select('search', '(?i)emx2|oidc|password') | list }}"

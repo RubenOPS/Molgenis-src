@@ -7,7 +7,6 @@
     pkg:
       - openjdk-21-jre
       - python3-psycopg2
-      - nginx
     update_cache: true
   when: ansible_facts['distribution'] == "Ubuntu"
 
@@ -139,7 +138,7 @@
     owner: molgenis
     group: molgenis
     state: link
-  notify: "Restart emx2"
+  notify: "restart emx2"
 
 - name: 🔎 Check if molgenis-server.properties exists
   ansible.builtin.stat:
@@ -238,35 +237,22 @@
   when: new_db is changed
 
 # ===================================
-# Nginx setup
+# Nginx: only add the EMX2 location snippet.
+# nginx itself (install, nginx.conf, TLS, restarts) is managed by the SRC-Nginx plugin.
 # ===================================
-- name: ⚙️ Customize nginx.conf
-  ansible.builtin.copy:
-    src: nginx.conf
-    dest: /etc/nginx/nginx.conf
-    mode: '0644'
-  notify: "Restart nginx"
-
-- name: 📁 Create nginx default.d folder
+- name: 📁 Create nginx app-location-conf.d folder
   ansible.builtin.file:
     state: directory
     owner: root
     group: root
     mode: '0755'
-    path: "/etc/nginx/default.d"
+    path: /etc/nginx/app-location-conf.d
 
-- name: ⚙️ Install emx2 nginx frontend config
+- name: ⚙️ Install emx2 nginx location config
   ansible.builtin.template:
-    src: "{{ 'emx2.j2' if enable_catalogue | default(false) | bool else 'emx2.j2' }}"
-    dest: /etc/nginx/default.d/emx2.conf
+    src: emx2.j2
+    dest: /etc/nginx/app-location-conf.d/emx2.conf
     mode: '0644'
-  notify: "Restart nginx"
-
-- name: ✅ Enable and start Nginx
-  ansible.builtin.systemd:
-    name: nginx
-    enabled: true
-    state: started
 
 # ===================================
 # EMX2 service
@@ -278,7 +264,7 @@
     group: root
     dest: /etc/systemd/system/emx2.service
     mode: '0644'
-  notify: "Restart emx2"
+  notify: "restart emx2"
 
 - name: 📁 Create emx2.service.d folder
   ansible.builtin.file:
@@ -297,7 +283,7 @@
     # override.conf usually contains the admin password, so keep it root-only
     mode: '0600'
   no_log: true
-  notify: "Restart emx2"
+  notify: "restart emx2"
 
 - name: 🔗 Create symbolic link to full_restore script
   ansible.builtin.file:
