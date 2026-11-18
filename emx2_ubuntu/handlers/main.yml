@@ -1,10 +1,5 @@
 ---
-- name: Restart nginx
-  ansible.builtin.systemd:
-    name: nginx
-    state: restarted
-
-- name: Restart emx2
+- name: restart emx2
   ansible.builtin.systemd:
     name: emx2.service
     state: restarted
