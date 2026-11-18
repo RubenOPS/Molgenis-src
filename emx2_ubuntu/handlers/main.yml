@@ -1,5 +1,5 @@
 ---
-- name: restart emx2
+- name: Restart emx2
   ansible.builtin.systemd:
     name: emx2.service
     state: restarted
