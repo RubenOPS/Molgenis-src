@@ -257,7 +257,7 @@
 
 - name: ⚙️ Install emx2 nginx frontend config
   ansible.builtin.template:
-    src: "{{ 'emx2-catalogue.j2' if enable_catalogue | default(false) | bool else 'emx2.j2' }}"
+    src: "{{ 'emx2.j2' if enable_catalogue | default(false) | bool else 'emx2.j2' }}"
     dest: /etc/nginx/default.d/emx2.conf
     mode: '0644'
   notify: "Restart nginx"
