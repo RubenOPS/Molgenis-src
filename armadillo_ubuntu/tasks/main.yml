@@ -1,0 +1,82 @@
+---
+- name: Install prerequisites
+  ansible.builtin.apt:
+    name:
+      - openjdk-21-jre-headless
+      - docker.io
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Download the Armadillo setup script
+  ansible.builtin.get_url:
+    url: "{{ armadillo_setup_url }}"
+    dest: "{{ armadillo_setup_script }}"
+    mode: "0700"
+    owner: root
+    group: root
+
+- name: Run the Armadillo setup script
+  ansible.builtin.command:
+    argv: "{{ armadillo_base_args + armadillo_oidc_args }}"
+    creates: "{{ armadillo_done_marker }}"
+  vars:
+    armadillo_base_args:
+      - bash
+      - "{{ armadillo_setup_script }}"
+      - --admin-user
+      - "{{ armadillo_admin_user }}"
+      - --admin-password
+      - "{{ armadillo_admin_password }}"
+      - --domain
+      - "{{ armadillo_domain }}"
+    armadillo_oidc_args: >-
+      {{ ['--oidc',
+          '--oidc_url', armadillo_oidc_url,
+          '--oidc_clientid', armadillo_oidc_clientid | default(''),
+          '--oidc_clientsecret', armadillo_oidc_clientsecret | default('')]
+          if armadillo_oidc_enabled | bool else [] }}
+  no_log: true
+  register: armadillo_setup
+
+- name: Write install marker
+  ansible.builtin.file:
+    path: "{{ armadillo_done_marker }}"
+    state: touch
+    mode: "0644"
+  when: armadillo_setup is changed
+
+# ===================================
+# nginx: only a location snippet; the SRC-Nginx plugin owns the server block
+# ===================================
+- name: Create nginx app-location-conf.d folder
+  ansible.builtin.file:
+    path: /etc/nginx/app-location-conf.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: ⚙️ Install armadillo nginx location config
+  ansible.builtin.template:
+    src: armadillo.conf
+    dest: /etc/nginx/app-location-conf.d/armadillo.conf
+    mode: '0644'
+
+# Warn if the plugin's server block does not load the snippet folder
+- name: Check that the SRC-Nginx TLS config includes the snippet folder
+  ansible.builtin.command: grep -q "app-location-conf.d" /etc/nginx/conf.d/tls_main.conf
+  register: nginx_include_check
+  changed_when: false
+  failed_when: false
+
+- name: Warn if the snippet folder is not included
+  ansible.builtin.debug:
+    msg: "WARNING: /etc/nginx/conf.d/tls_main.conf does not reference app-location-conf.d, the Armadillo proxy rules will not be active"
+  when: nginx_include_check.rc != 0
+
+  handlers:
+    - name: Reload nginx
+      ansible.builtin.service:
+        name: nginx
+        state: reloaded
