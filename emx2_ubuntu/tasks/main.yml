@@ -138,7 +138,7 @@
     owner: molgenis
     group: molgenis
     state: link
-  notify: "restart emx2"
+  notify: "Restart emx2"
 
 - name: 🔎 Check if molgenis-server.properties exists
   ansible.builtin.stat:
@@ -264,7 +264,7 @@
     group: root
     dest: /etc/systemd/system/emx2.service
     mode: '0644'
-  notify: "restart emx2"
+  notify: "Restart emx2"
 
 - name: 📁 Create emx2.service.d folder
   ansible.builtin.file:
@@ -283,7 +283,7 @@
     # override.conf usually contains the admin password, so keep it root-only
     mode: '0600'
   no_log: true
-  notify: "restart emx2"
+  notify: "Restart emx2"
 
 - name: 🔗 Create symbolic link to full_restore script
   ansible.builtin.file:
