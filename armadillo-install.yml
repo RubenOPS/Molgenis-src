@@ -15,7 +15,7 @@
   vars:
     armadillo_admin_user: admin
     armadillo_oidc_enabled: false
-    armadillo_oidc_url: https://auth1.molgenis.net/Armadillo
+    armadillo_oidc_url: https://auth1.molgenis.net/realms/Armadillo
     armadillo_setup_url: https://raw.githubusercontent.com/molgenis/molgenis-service-armadillo/master/scripts/install/armadillo-setup.sh
     armadillo_setup_script: /opt/armadillo-setup.sh
     armadillo_done_marker: /var/lib/armadillo-install.done
