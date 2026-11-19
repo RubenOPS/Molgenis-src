@@ -1,4 +1,5 @@
 ---
 - name: Reload nginx
-  ansible.builtin.command:
-    cmd: nginx -t && systemctl reload nginx
+  ansible.builtin.service:
+    name: nginx
+    state: reloaded
